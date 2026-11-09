@@ -1,0 +1,13 @@
+fastapi<1,>=0.115
+lingua-language-detector<3,>=2.2
+numpy<3,>=1.26
+python-dotenv<2,>=1
+uvicorn[standard]<1,>=0.30
+
+[dev]
+pytest<10,>=8
+
+[models]
+faster-whisper<2,>=1.2
+sentencepiece<1,>=0.2
+transformers<5,>=4.57

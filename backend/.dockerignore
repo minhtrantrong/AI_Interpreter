@@ -1,0 +1,10 @@
+.env
+.git
+.local
+.pytest_cache
+.venv
+__pycache__
+*.py[cod]
+models
+tests
+translate_realtime_backend.egg-info

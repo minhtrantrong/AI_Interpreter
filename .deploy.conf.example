@@ -1,0 +1,17 @@
+# Sao chép file này thành .deploy.conf và điền thông tin SSH của server.
+SERVER_HOST=192.168.1.100
+SERVER_USER=deploy
+SSH_PORT=22
+
+# Nên dùng thư mục mà SERVER_USER có quyền ghi, không cần sudo.
+SERVER_PATH=/home/deploy/apps/translate-realtime
+
+# Để trống nếu SSH key đã được nạp vào ssh-agent.
+SSH_KEY=/home/your-local-user/.ssh/id_ed25519
+
+# File cấu hình production trên máy local, được upload riêng với quyền 600.
+DEPLOY_ENV_FILE=.env.docker
+
+# Lần đầu tải/chuyển model có thể mất nhiều phút.
+DEPLOY_HEALTH_TIMEOUT=1800
+
