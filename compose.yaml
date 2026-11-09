@@ -7,7 +7,7 @@ services:
       context: ./backend
     restart: unless-stopped
     init: true
-    # Docker Snap cần NVIDIA runtime để gọi runtime hook đúng cách.
+    # Docker Snap requires the NVIDIA runtime to invoke the runtime hook correctly.
     runtime: nvidia
     environment:
       HOST: 0.0.0.0

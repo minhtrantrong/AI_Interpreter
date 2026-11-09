@@ -1,51 +1,56 @@
-# Triển khai Docker trên NVIDIA GPU
+# Docker Deployment on an NVIDIA GPU
 
-Cấu hình này dành cho một máy Linux có RTX 3060 12 GB và còn khoảng 5 GB VRAM.
-Production mặc định dùng `Large-v3-Turbo`, `int8_float16`, một backend worker và
-NLLB-200 distilled 600M CTranslate2. `Whisper Small` vẫn có thể chọn trên giao diện.
+This configuration is intended for a Linux machine with an RTX 3060 12 GB GPU
+and approximately 5 GB of free VRAM. Production defaults to `Large-v3-Turbo`,
+`int8_float16`, a single backend worker, and NLLB-200 distilled 600M with
+CTranslate2. `Whisper Small` can still be selected in the UI.
 
-## 1. Chuẩn bị server
+## 1. Prepare the server
 
-Server cần có:
+The server needs:
 
-- NVIDIA driver hỗ trợ CUDA 12.3 trở lên.
-- Docker Engine và Docker Compose v2.
-- NVIDIA Container Toolkit đã được cấu hình cho Docker.
-- Nên còn ít nhất 20 GB dung lượng đĩa cho CUDA image, dependency và model cache.
+- An NVIDIA driver that supports CUDA 12.3 or later.
+- Docker Engine and Docker Compose v2.
+- NVIDIA Container Toolkit configured for Docker.
+- At least 20 GB of free disk space is recommended for the CUDA image,
+  dependencies, and model cache.
 
-Kiểm tra GPU trên host và bên trong container:
+Check the GPU on the host and inside a container:
 
 ```bash
 nvidia-smi
 docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
 ```
 
-Nếu lệnh thứ hai lỗi, cần sửa NVIDIA Container Toolkit trước khi khởi động ứng
-dụng. Docker không giới hạn VRAM cứng cho từng container; hãy dùng `nvidia-smi`
-để bảo đảm các tiến trình khác thực sự còn ít nhất 5 GB.
+If the second command fails, fix the NVIDIA Container Toolkit setup before
+starting the application. Docker does not enforce a hard VRAM limit per
+container; use `nvidia-smi` to ensure other processes leave at least 5 GB
+available.
 
-## 2. Cấu hình
+## 2. Configure
 
-Tại thư mục gốc dự án:
+From the project root:
 
 ```bash
 cp .env.docker.example .env.docker
 ```
 
-Nếu đã có domain trỏ về server, sửa:
+If you have a domain pointing to the server, update:
 
 ```dotenv
 SITE_ADDRESS=translate.example.com
 ```
 
-Caddy sẽ tự xin và gia hạn chứng chỉ HTTPS khi domain truy cập được từ Internet
-qua cổng 80/443. HTTPS là bắt buộc để trình duyệt cấp microphone khi người dùng
-không truy cập bằng `localhost`.
+Caddy will automatically obtain and renew an HTTPS certificate when the domain
+is reachable from the Internet on ports 80 and 443. HTTPS is required for the
+browser to grant microphone access when users are not accessing the app through
+`localhost`.
 
-Để test HTTP trong mạng local, giữ `SITE_ADDRESS=:80`. Khi đó giao diện vẫn mở
-được nhưng microphone có thể bị trình duyệt chặn nếu dùng địa chỉ IP của server.
+For HTTP testing on a local network, leave `SITE_ADDRESS=:80`. The UI will be
+available, but the browser may block microphone access when using the server's
+IP address.
 
-## 3. Build và chạy
+## 3. Build and run
 
 ```bash
 docker compose --env-file .env.docker build
@@ -53,50 +58,54 @@ docker compose --env-file .env.docker up -d
 docker compose --env-file .env.docker logs -f backend
 ```
 
-Lần đầu backend sẽ:
+On the first startup, the backend will:
 
-1. Tải và chuyển NLLB-200 distilled 600M sang CTranslate2.
-2. Tải Whisper Small vào cache đĩa.
-3. Tải Large-v3-Turbo vào cache đĩa.
-4. Nạp Turbo và NLLB-200 lên GPU rồi mới báo healthy.
+1. Download NLLB-200 distilled 600M and convert it to CTranslate2 format.
+2. Download Whisper Small to the disk cache.
+3. Download Large-v3-Turbo to the disk cache.
+4. Load Turbo and NLLB-200 onto the GPU before reporting as healthy.
 
-Quá trình đầu tiên có thể kéo dài nhiều phút tùy mạng và CPU. Các lần khởi động
-sau dùng volume `model-data`, không tải lại model.
+The initial setup may take several minutes, depending on network and CPU speed.
+Subsequent startups reuse the `model-data` volume and do not download the models
+again.
 
-### Deploy server bằng một lệnh từ máy local
+### Deploy to the server with one command from your local machine
 
-Tạo cấu hình SSH một lần:
+Create the SSH configuration once:
 
 ```bash
 cp .deploy.conf.example .deploy.conf
 nano .deploy.conf
 ```
 
-Đảm bảo `.env.docker` chứa cấu hình production mong muốn. Từ những lần sau, chỉ
-cần chạy tại thư mục gốc dự án:
+Make sure `.env.docker` contains the production configuration you want. For
+subsequent deployments, run this from the project root:
 
 ```bash
 ./scripts/deploy.sh
 ```
 
-Script đóng gói đúng trạng thái code đang có trên máy local (kể cả thay đổi chưa
-commit), loại trừ model, virtualenv, `node_modules`, file secret và build output;
-sau đó kiểm tra checksum, build trên server, chạy Compose và chờ hai service
-healthy. Mỗi bản được lưu tại `SERVER_PATH/releases/<release-id>`, còn liên kết
-`SERVER_PATH/current` chỉ được cập nhật sau khi health check thành công.
+The script packages the exact code state on your local machine (including
+uncommitted changes), excluding models, virtual environments, `node_modules`,
+secret files, and build output. It then verifies the checksum, builds on the
+server, starts Compose, and waits for both services to become healthy. Each
+release is stored at `SERVER_PATH/releases/<release-id>`. The
+`SERVER_PATH/current` link is updated only after the health check succeeds.
 
-Script ưu tiên chạy `docker` trực tiếp. Nếu user SSH chưa thuộc nhóm `docker`, nó
-tự chuyển sang `sudo docker` và hỏi mật khẩu sudo qua terminal. Mật khẩu không
-được ghi vào `.deploy.conf` hay upload lên server. Với CI không có terminal, admin
-cần cấp quyền Docker trực tiếp hoặc cấu hình sudo `NOPASSWD` phù hợp.
+The script tries to run `docker` directly first. If the SSH user is not in the
+`docker` group, it falls back to `sudo docker` and prompts for the sudo password
+in the terminal. The password is not written to `.deploy.conf` or uploaded to
+the server. For CI without a terminal, an administrator must grant direct Docker
+access or configure suitable `sudo NOPASSWD` permissions.
 
-Xem trạng thái và 100 dòng log backend từ máy local:
+View the deployment status and the latest 100 lines of backend logs from your
+local machine:
 
 ```bash
 ./scripts/deploy-status.sh
 ```
 
-Kiểm tra trạng thái:
+Check the status:
 
 ```bash
 docker compose --env-file .env.docker ps
@@ -105,53 +114,55 @@ curl http://127.0.0.1/health
 nvidia-smi
 ```
 
-Khi dùng domain HTTPS:
+When using an HTTPS domain:
 
 ```bash
 curl https://translate.example.com/health
 ```
 
-## 4. Vận hành
+## 4. Operations
 
-Cập nhật code và dựng lại:
+Update the code and rebuild:
 
 ```bash
 git pull
 docker compose --env-file .env.docker up -d --build
 ```
 
-Khởi động lại mà không build:
+Restart without rebuilding:
 
 ```bash
 docker compose --env-file .env.docker restart
 ```
 
-Xem log realtime:
+Follow the logs:
 
 ```bash
 docker compose --env-file .env.docker logs -f --tail=200
 ```
 
-Dừng ứng dụng nhưng giữ model cache:
+Stop the application while keeping the model cache:
 
 ```bash
 docker compose --env-file .env.docker down
 ```
 
-Không thêm `--volumes` vào lệnh `down` nếu muốn giữ model đã tải.
+Do not add `--volumes` to the `down` command if you want to keep the downloaded
+models.
 
-## 5. Tinh chỉnh hiệu năng
+## 5. Performance tuning
 
-- Giữ `ASR_NUM_WORKERS=1`: mỗi worker Uvicorn riêng sẽ nạp lại toàn bộ model và
-  làm tăng VRAM.
-- `ASR_DEFAULT_MODEL=turbo`: ưu tiên độ chính xác. Đổi sang `small` nếu server
-  còn ít GPU compute hoặc cần phản hồi nhanh hơn.
-- Giữ `ASR_COMPUTE_TYPE=int8_float16` và
-  `TRANSLATION_COMPUTE_TYPE=int8_float16`: phù hợp mức VRAM còn lại.
-- `ASR_FINAL_BEAM_SIZE=5` sửa kết quả ở cuối câu; partial dùng beam 1 để giữ độ
-  trễ thấp.
-- Không tăng số thread vượt quá số core CPU thực. Mặc định 4 thread cho STT và
-  4 thread cho dịch là điểm bắt đầu an toàn.
+- Keep `ASR_NUM_WORKERS=1`: each separate Uvicorn worker loads its own copy of
+  every model and increases VRAM usage.
+- `ASR_DEFAULT_MODEL=turbo` prioritizes accuracy. Change it to `small` if GPU
+  compute is limited or you need faster responses.
+- Keep `ASR_COMPUTE_TYPE=int8_float16` and
+  `TRANSLATION_COMPUTE_TYPE=int8_float16`; these are suitable for the available
+  VRAM.
+- `ASR_FINAL_BEAM_SIZE=5` refines the result at the end of an utterance; partial
+  results use beam 1 to keep latency low.
+- Do not set the thread count higher than the number of physical CPU cores. Four
+  threads for ASR and four for translation are safe starting points.
 
-Nếu gặp CUDA out-of-memory, trước tiên kiểm tra tiến trình khác bằng
-`nvidia-smi`. Sau đó đổi `ASR_DEFAULT_MODEL=small` và khởi động lại stack.
+If you encounter a CUDA out-of-memory error, first check for other processes
+with `nvidia-smi`. Then set `ASR_DEFAULT_MODEL=small` and restart the stack.
